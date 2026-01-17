@@ -24,10 +24,10 @@ Matrix Multiplication ($C = A \times B$) is the bottleneck. The naive $O(N^3)$ i
 
 ## Current Status
 
--   [x] **Memory System**: `MemoryArena` implemented and verified with `gtest`.
--   [x] **Compute Kernels**: Tiled GEMM implemented (`ops.cpp`) and benchmarked.
--   [x] **Python Bindings**: Functional `pybind11` bridge with zero-copy support.
--   [ ] **Model Loader**: Parsing `.safetensors` is not implemented (Placeholder).
+-    **Memory System**: `MemoryArena` implemented and verified with `gtest`.
+-    **Compute Kernels**: Tiled GEMM implemented (`ops.cpp`) and benchmarked.
+-    **Python Bindings**: Functional `pybind11` bridge with zero-copy support.
+-    **Model Loader**: Parsing `.safetensors` is not implemented (Placeholder).
 
 ## Complexity Analysis
 
