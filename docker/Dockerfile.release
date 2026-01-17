@@ -1,0 +1,27 @@
+# Build Stage
+FROM python:3.10-slim AS builder
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY . .
+
+RUN mkdir build && cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release .. && \
+    make -j$(nproc)
+
+# Runtime Stage (Minimal)
+FROM python:3.10-slim
+
+WORKDIR /app
+COPY --from=builder /app/build/libedgecortex_core.so /usr/local/lib/
+COPY --from=builder /app/python /app/python
+
+ENV PYTHONPATH=/app/python
+ENV LD_LIBRARY_PATH=/usr/local/lib
+
+CMD ["python", "-c", "import edge_cortex; print('EdgeCortex Engine Ready')"]

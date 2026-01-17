@@ -1,0 +1,10 @@
+build/
+__pycache__/
+*.so
+*.pyd
+*.dll
+*.lib
+*.exp
+*.exe
+.pytest_cache/
+.vscode/
