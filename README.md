@@ -1,63 +1,40 @@
-# EdgeCortex: Hybrid INT8 Inference Engine
+# EdgeCortex: Hybrid C++/Python Inference Engine
 
-![C++](https://img.shields.io/badge/C++-17-blue.svg) ![Python](https://img.shields.io/badge/Python-3.10-yellow.svg) ![License](https://img.shields.io/badge/License-MIT-green.svg)
+`EdgeCortex` implements a custom linear memory allocator and tiled matrix multiplication kernels to execute inference tasks on constrained edge devices. It prioritizes memory locality and predictable latency over the flexibility of general-purpose frameworks like PyTorch or TensorFlow.
 
-**EdgeCortex** es un motor de inferencia de alto rendimiento diseñado desde cero para ejecutar Modelos de Lenguaje Pequeños (SLMs) en hardware limitado (Edge Devices). A diferencia de frameworks generalistas como PyTorch, EdgeCortex elimina el overhead del runtime mediante gestión manual de memoria y kernels aritméticos optimizados.
+## Design Decisions
 
-## 🏛️ Arquitectura
+### 1. Zero-Copy Architecture via Custom Allocator
+Instead of relying on `malloc` or Python's Garbage Collector during inference, this system reserves a contiguous `MemoryArena` at startup.
+-   **Why**: System calls like `sbrk` or `mmap` introduce non-deterministic latency. On embedded systems (e.g., Cortex-A series), standard allocators can cause fragmentation that kills long-running processes.
+-   **Mechanism**: The arena is aligned to 4KB (OS page size) using `posix_memalign` (or `_aligned_malloc` on Windows).
+-   **Interop**: The chunk is exposed to Python via the Buffer Protocol (`py::buffer_protocol`). This allows `numpy` arrays to view C++ memory directly without copying data.
 
-El sistema implementa una arquitectura híbrida estricta:
-- **Hot Path (C++)**: Gestión de memoria, Operaciones Tensoriales (GEMM, Softmax), Cuantización.
-- **Control Path (Python)**: Carga de modelos, Tokenización, Orquestación de inferencia.
+### 2. Tiled GEMM Kernel Implementation
+Matrix Multiplication ($C = A \times B$) is the bottleneck. The naive $O(N^3)$ implementation acts as a cache thrasher for $N > 256$.
+-   **Optimization**: Implemented "Block Tiling" with strict block sizes (32x32) to ensure working sets fit within L1 Cache (typical 32KB).
+-   **Result**: 1.8x speedup measured vs naive implementation on x86_64.
+-   **SIMD**: Loops are structured to allow compiler auto-vectorization (AVX2/NEON), though manual intrinsics were not written to maintain portability.
 
-### Core Modules
-*   `MemoryArena`: Allocator lineal personalizado que garantiza alineación de memoria (AVX/Page boundaries) y elimina syscalls (`malloc`) durante la generación de tokens.
-*   `ComputeKernels`: Implementaciones SIMD (AVX2) para operaciones matriciales INT8.
+## Trade-offs and Limitations
 
-## 🚀 Retos Técnicos Superados
+*   **No Garbage Collection**: The `MemoryArena` is a simple linear allocator. It does not support `free()` of individual tensors. The entire arena must be `reset()`, making it suitable for inference passes but useless for training dynamic graphs.
+*   **Static Graph Assumption**: The current architecture assumes the compute graph is defined statically. Dynamic control flow requires Python overhead.
+*   **Precision**: Currently runs fp32. INT8 quantization logic is planned but only partially scaffolded.
 
-### Gestión de Memoria Zero-Copy
-Para minimizar la latencia en dispositivos con RAM unificada (como Jetson Nano), implementé un `CustomAllocator` en C++ alineado a 4KB (límites de página del OS).
-*   **Problema**: Pasar tensores de C++ a Python típicamente involucra copias costosas.
-*   **Solución**: Exponer el puntero crudo del `MemoryArena` a través del **Python Buffer Protocol**. Esto permite que `numpy` en Python vea la memoria gestionada por C++ sin realizar ni una sola copia (`memcpy`), reduciendo el tiempo de pre-procesamiento en un **40%**.
+## Current Status
 
-### Dispatch Dinámico de Instrucciones
-El motor detecta en tiempo de ejecución (Runtime CPUID check) las capacidades del procesador (AVX2 vs SSE4) y selecciona dinámicamente el puntero a función optimizado.
+-   [x] **Memory System**: `MemoryArena` implemented and verified with `gtest`.
+-   [x] **Compute Kernels**: Tiled GEMM implemented (`ops.cpp`) and benchmarked.
+-   [x] **Python Bindings**: Functional `pybind11` bridge with zero-copy support.
+-   [ ] **Model Loader**: Parsing `.safetensors` is not implemented (Placeholder).
 
-### Optimización Aritmética (GEMM)
-Implementación de un kernel de multiplicación de matrices con **Block Tiling** para maximizar el hit-rate en la Cache L1.
-*   **Naive Triple Loop**: $O(N^3)$, severo Cache Thrashing.
-*   **Tiled Implementation**: Divide las matrices en bloques de $32\times32$ que caben en la L1 Cache (32KB).
-*   **Resultados**: Speedup de **1.8x - 3.0x** (dependiendo del HW) verified via benchmark script `python/benchmarks/benchmark_gemm.py`.
+## Complexity Analysis
 
-## 📊 Análisis de Complejidad Computacional
+| Operation | Implementation | Time Complexity | Space Complexity |
+| :--- | :--- | :--- | :--- |
+| **Allocation** | Linear Pointer Bump | $O(1)$ | $O(1)$ |
+| **GEMM (Naive)** | Triple Loop | $O(N^3)$ | $O(1)$ |
+| **GEMM (Tiled)** | Blocked Loop | $O(N^3)$ * | $O(BlockSize^2)$ cache |
 
-### Atención (Self-Attention)
-La operación central del Transformer tiene una complejidad teórica de:
-$$ O(N^2 \cdot d) $$
-Donde $N$ es la longitud de la secuencia y $d$ la dimensión del modelo.
-*   **Optimización**: Implementación de **FlashAttention-like tiling** para mantener los bloques de cálculo dentro de la L1 Cache, reduciendo los accesos a DRAM (el verdadero cuello de botella en inferencia).
-
-### Gestión del KV-Cache
-*   **Naive**: $O(N)$ reasignaciones de memoria por cada nuevo token generado.
-*   **EdgeCortex**: Pre-reservamos el KV-Cache en el `MemoryArena` como un buffer circular. La complejidad de asignación de memoria para un nuevo token se reduce de $O(1)$ amortizado (malloc) a $O(1)$ estricto (puntero + offset), eliminando jitter en la latencia de generación.
-
-## 🛠️ Build & Run
-
-### Requisitos
-*   CMake 3.14+
-*   Compilador C++17 (GCC/Clang/MSVC)
-*   Python 3.8+
-
-### Compilación (Docker)
-```bash
-docker build -t edge-cortex -f docker/Dockerfile.release .
-docker run edge-cortex
-```
-
-### Compilación Manual
-```bash
-mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-cmake --build .
-```
+*\* Tiling improves the constant factor relative to memory bandwidth, not the asymptotic complexity.*
