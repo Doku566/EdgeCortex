@@ -30,6 +30,7 @@ FetchContent_MakeAvailable(pybind11)
 set(SOURCES
     src/allocator.cpp
     src/bindings.cpp
+    src/ops.cpp
 )
 
 # Create Python extension module

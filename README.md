@@ -22,7 +22,13 @@ Para minimizar la latencia en dispositivos con RAM unificada (como Jetson Nano),
 *   **Solución**: Exponer el puntero crudo del `MemoryArena` a través del **Python Buffer Protocol**. Esto permite que `numpy` en Python vea la memoria gestionada por C++ sin realizar ni una sola copia (`memcpy`), reduciendo el tiempo de pre-procesamiento en un **40%**.
 
 ### Dispatch Dinámico de Instrucciones
-El motor detecta en tiempo de ejecución (Runtime CPUID check) las capacidades del procesador (AVX2 vs SSE4) y selecciona dinámicamente el puntero a función optimizado. Esto permite distribuir un único binario que exprime el máximo rendimiento del hardware disponible sin recompilación.
+El motor detecta en tiempo de ejecución (Runtime CPUID check) las capacidades del procesador (AVX2 vs SSE4) y selecciona dinámicamente el puntero a función optimizado.
+
+### Optimización Aritmética (GEMM)
+Implementación de un kernel de multiplicación de matrices con **Block Tiling** para maximizar el hit-rate en la Cache L1.
+*   **Naive Triple Loop**: $O(N^3)$, severo Cache Thrashing.
+*   **Tiled Implementation**: Divide las matrices en bloques de $32\times32$ que caben en la L1 Cache (32KB).
+*   **Resultados**: Speedup de **1.8x - 3.0x** (dependiendo del HW) verified via benchmark script `python/benchmarks/benchmark_gemm.py`.
 
 ## 📊 Análisis de Complejidad Computacional
 
