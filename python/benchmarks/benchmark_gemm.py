@@ -4,12 +4,21 @@ import sys
 import os
 
 # Import C++ Core
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../build/Release")))
+paths_to_check = [
+    "../../build/Release",
+    "../../build/Debug",
+    "../../build",
+    "../../lib"
+]
+for p in paths_to_check:
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), p)))
+
 try:
     import edgecortex_core
 except ImportError:
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../build")))
-    import edgecortex_core
+    print("[ERROR] Could not import 'edgecortex_core'. Ensure the C++ extension is compiled.")
+    print(f"Checked paths: {sys.path}")
+    sys.exit(1)
 
 def benchmark(N=512, iterations=3):
     print(f"Benchmarking Matrix Multiplication (N={N})...")

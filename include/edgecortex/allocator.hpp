@@ -33,7 +33,7 @@ public:
      * @param alignment Alignment requirement (default 64 bytes for AVX-512).
      * @return Pointer to the allocated block.
      */
-    void* allocate(size_t size, size_t alignment = 64);
+    [[nodiscard]] void* allocate(size_t size, size_t alignment = 64);
 
     /**
      * @brief Reset the allocator to the beginning. 
